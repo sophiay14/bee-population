@@ -1,0 +1,87 @@
+---
+title: "Bee Species"
+author: "Sophia Yao"
+format: html
+---
+
+```{r}
+#| label: setup
+#| message: false
+#| cache: true
+#| include: false
+
+# Load necessary libraries
+library(tidyverse)
+library(brms)
+library(gtsummary)
+library(tidybayes)
+
+# Load the dataset
+bee_data <- read_csv("data/bee_data.csv")
+```
+
+```{r}
+# Handle missing values and convert date
+bee_data <- bee_data |> 
+  mutate(Date = as.Date(Date, format="%m/%d/%Y")) |> 
+  mutate(Year = as.numeric(format(Date, "%Y")),
+         Month = as.numeric(format(Date, "%m")),
+         Day = as.numeric(format(Date, "%d"))) |> 
+  select(-Date)
+
+
+# Encode categorical variables
+bee_data <- bee_data |> 
+  mutate(across(c(Location, Collected.InOn, Collectors, Sex, Family, Common.name, ID.by, Notes), as.factor)) |> 
+  mutate(Scientific.name = as.factor(Scientific.name))
+```
+
+```{r}
+#| label: model
+#| cache: true
+
+formula <- bf(Scientific.name ~ Location + Latitude + Longitude + Year + Month + Day + Collected.InOn + Collectors + Sex + Family + Common.name + ID.by + Notes, family = categorical())
+
+model <- brm(formula, data = bee_data, iter = 2000, warmup = 1000, chains = 4, cores = 4)
+
+summary <- tbl_regression(model)
+
+summary
+```
+
+```{r}
+# Create a new dataset for prediction (this should have the same structure as the original data)
+new_data <- data.frame(
+  Location = factor("Cajun Prairie Farms old field", levels = levels(bee_data$Location)),
+  Latitude = 30.403897,
+  Longitude = -91.993592,
+  Year = 2024,
+  Month = 7,
+  Day = 22,
+  Collected.InOn = factor("pan trap", levels = levels(bee_data$Collected.InOn)),
+  Collectors = factor("Larry Allain", levels = levels(bee_data$Collectors)),
+  Sex = factor("F", levels = levels(bee_data$Sex)),
+  Family = factor("Megachilidae", levels = levels(bee_data$Family)),
+  Common.name = factor("Blue metallic bee", levels = levels(bee_data$Common.name)),
+  ID.by = factor("Brittany Owens", levels = levels(bee_data$ID.by)),
+  Notes = factor("nd", levels = levels(bee_data$Notes))
+)
+
+# Make predictions on the new dataset
+predictions <- predict(model, newdata = new_data)
+
+# Add predictions to the new data
+new_data <- new_data %>%
+  mutate(Predicted_Scientific_name = apply(predictions$fit, 1, which.max))
+
+# Display the new data with predictions
+new_data
+```
+
+```{r}
+#| label: visualizations
+
+conditional_effects(model) |> 
+  plot()
+```
+
